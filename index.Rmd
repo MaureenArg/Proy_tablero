@@ -1,0 +1,177 @@
+---
+title: "Denuncias ambientales en Costa Rica (2018-2019)"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+```
+
+```{r pquetes, warning=FALSE, message=FALSE}
+library (DT)
+library (dplyr)
+library (terra)
+library (raster)
+library (leaflet)
+library (sf)
+library (ggplot2)
+library (plotly)
+```
+
+```{r datos, warning=FALSE, message=FALSE}
+provincias <-
+  st_read(
+    "https://github.com/tpb728O-programaciongeoespacialr/2021ii/raw/main/datos/ign/delimitacion-territorial-administrativa/provincias.geojson",
+    quiet = TRUE
+  )
+```
+
+```{r}
+provincias <-
+  provincias %>%
+  st_transform(4326)
+```
+
+```{r}
+cuencas <-
+  st_read(
+    "https://raw.githubusercontent.com/MaureenArg/datostarea/master/cuencas.geojson",
+    quiet = TRUE
+  )
+```
+
+```{r}
+altitud <-
+  rast(
+    "/vsicurl/https://raw.githubusercontent.com/tpb728O-programaciongeoespacialr/2021ii/master/datos/worldclim/altitud.tif"
+  )
+```
+
+```{r}
+denu_depu <-
+  st_read(
+    "/vsicurl/https://raw.githubusercontent.com/MaureenArg/datostarea/master/denu_depu.csv",
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude",
+      "Y_POSSIBLE_NAMES=decimalLatitude"
+    ),
+    quiet = TRUE
+  )
+```
+
+```{r}
+st_crs (denu_depu) <- 4326
+```
+
+```{r}
+denuncias2021 <-
+read.csv (
+  file= "https://raw.githubusercontent.com/MaureenArg/datostarea/master/denunciasoct23.csv", 
+ sep = ";"
+    )
+```
+
+
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Mapa de ubicación de denuncias ambientales (2018-2019)
+
+```{r mapa, warning=FALSE}
+altitud_rl <- raster(altitud)
+leaflet() %>%
+  addTiles (group = "OSM") %>%
+  addProviderTiles("Esri", group = "Esri") %>%
+  addProviderTiles("CartoDB", group = "CartoDB") %>%
+  addRasterImage(
+    altitud_rl, 
+    opacity = 0.6
+  ) %>% 
+   addPolygons(
+    data = cuencas,group = "Cuencas hidrográficas", 
+    color = "black",
+    fillColor = "blue",
+    stroke = TRUE,
+    weight = 1.0, popup = ~NOMBRE,
+  ) %>%
+  
+  addPolygons(
+    data = provincias,group = "Provincias", 
+    color = "black",
+    fillColor = "Transparent",
+    stroke = TRUE, popup = ~provincia, 
+    weight = 1.0
+  ) %>%
+  
+  addCircleMarkers(
+    data = denu_depu,
+    stroke = F,
+    radius = 4,
+    fillColor = 'red',
+    fillOpacity = 0.5, popup = ~TIPO_inf,
+  ) %>%
+addLayersControl(baseGroups = c ("OSM", "Esri", "CartoDB", "Cuencas hidrográficas", "Provincias"))
+```
+
+
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Comparación del tipo de denuncias por año
+
+```{r}
+Tipos <- c ("Agua", "Aire", "Forestal", "Mineria", "Suelo", "Vida Silvestre" )
+año2018 <- c (48,4,25,49,89,41)
+año2019 <- c (37,20,47,30,88,56)
+data <- data.frame (Tipos, año2018, año2019)
+```
+
+```{r}
+plot_ly (data, x= ~Tipos, y= ~año2018, type = "bar", name = "2018")%>%
+add_trace(y= ~año2019, name= "2019")%>%
+layout (yaxis= list(title="Cantidad"), barmode="group")%>%
+layout (title= "Cantidad de denuncias ambientales por año", xaxis= list (title= "Tipo de denuncia"), yaxis= list (title= "Cantidad de denuncias"))
+```
+
+
+### Total de denuncias ambientales según tipo (2018-2019)
+
+```{r warning=FALSE, message=FALSE}
+denuncias_x_tipo <-
+  denuncias2021 %>%
+  select (afectado, denuncias) %>%
+  group_by (afectado) %>%
+  summarise (denuncias = sum (denuncias))
+```
+
+```{r warning=FALSE, message=FALSE}
+ggplot () + geom_col (
+  data = denuncias_x_tipo, 
+  aes (x = afectado, fill =  afectado, 
+      y = denuncias, fill = "denuncias"), width = 0.9) +
+  ggtitle ("Cantidad de denuncias según tipo 2018-2019") +
+  xlab ("Tipos de denuncias") +
+  ylab ("Cantidad de denuncias") +
+  scale_fill_manual (values = c ("#0000FF", "#CDC0B0", "#458B00","#EEAD0E" ,"#8B7355", "#BF3EFF")) +
+  theme (
+    legend.title = element_blank(), legend.position = "left", plot.title = element_text (size = 13))
+```
+
+
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+
+### Registros de denuncias según tipo
+```{r}
+denu_depu %>%
+  st_drop_geometry()%>%
+  select (TIPO_den, año, TIPO_inf, CATEGORIA_) %>%
+    datatable (rownames= FALSE, filter= "top", class= "hover cell-border stripe", caption= "Tabla 1: Tipo de denuncias ambientales según año", colnames = c( "Tipo de denuncia", "Año", "Detalle de la denuncia", "Categoría"), extensions = "Buttons", options = list (language = list (url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json"),dom = "Bfrtip", buttons = c("csv", "excel", "pdf")))
+```
+
